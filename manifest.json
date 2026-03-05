@@ -1,0 +1,25 @@
+{
+  "name": "text-viewer",
+  "version": "1.0.0",
+  "description": "Syntax-highlighted text viewer with line numbers, word wrap toggle, and search",
+  "extensions": [
+    "txt",
+    "log",
+    "json",
+    "yaml",
+    "yml",
+    "xml",
+    "md",
+    "sh",
+    "py",
+    "r",
+    "R",
+    "nf",
+    "smk",
+    "cfg",
+    "ini",
+    "toml"
+  ],
+  "entry": "index.js",
+  "style": "style.css"
+}
