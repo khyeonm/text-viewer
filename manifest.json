@@ -1,6 +1,6 @@
 {
   "name": "text-viewer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Syntax-highlighted text viewer with line numbers, word wrap toggle, and search",
   "extensions": [
     "txt",

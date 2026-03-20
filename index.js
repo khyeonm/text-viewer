@@ -104,7 +104,7 @@
   window.AutoPipePlugin = {
     render: function(container, fileUrl, filename) {
       rootEl = container;
-      rootEl.innerHTML = '<div class="text-loading">Loading ' + filename + '...</div>';
+      rootEl.innerHTML = '<div class="ap-loading">Loading...</div>';
       allLines = []; wordWrap = true; searchText = '';
 
       var ext = getExt(filename);
