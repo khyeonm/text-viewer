@@ -1,6 +1,6 @@
 {
   "name": "text-viewer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Syntax-highlighted text viewer with line numbers, word wrap toggle, and search",
   "extensions": [
     "txt",
@@ -21,5 +21,26 @@
     "toml"
   ],
   "entry": "index.js",
-  "style": "style.css"
+  "style": "style.css",
+  "data_source": {
+    "type": "text",
+    "row_count": "wc -l < '{file}'",
+    "metadata": "",
+    "rows": "sed -n '{start},{end}p' '{file}'",
+    "col_headers": [],
+    "meta_parse": "none",
+    "allow_nonzero_exit": false,
+    "fallback": [
+      {
+        "type": "docker",
+        "image": "ubuntu:22.04",
+        "row_count": "wc -l < '{file}'",
+        "metadata": "",
+        "rows": "sed -n '{start},{end}p' '{file}'",
+        "col_headers": [],
+        "meta_parse": "none",
+        "allow_nonzero_exit": false
+      }
+    ]
+  }
 }
