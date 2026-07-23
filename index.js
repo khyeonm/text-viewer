@@ -2,6 +2,76 @@
 // Syntax-highlighted text viewer with line numbers
 
 (function() {
+  // ── Inlined plain-gzip reader ──
+// Shared plain-gzip streaming line reader for AutoPipe text viewers.
+//
+// Unlike BGZF (vcf.gz/bed.gz), a .fastq.gz / .fasta.gz / .csv.gz is a single
+// gzip stream with no block index — you cannot jump to an arbitrary offset,
+// only read forward. That is fine for a viewer: fetch the file as a stream,
+// pipe it through DecompressionStream, and stop once a page is filled. Only
+// the leading bytes are ever downloaded, so a multi-GB fastq.gz never lands
+// in memory whole.
+//
+// Exposes window.AutoPipeGz = { available, lineReader(fileUrl) -> { readLines(n) } }.
+// Sequential paging only: going back to page 0 reopens the stream from the top.
+
+(function () {
+  if (window.AutoPipeGz) return;
+
+  function lineReader(fileUrl) {
+    var st = { reader: null, tail: '', eof: false, decoder: new TextDecoder(), done: false };
+
+    function open() {
+      return fetch(fileUrl).then(function (resp) {
+        if (!resp.ok || !resp.body) throw new Error('fetch failed: ' + resp.status);
+        var stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
+        st.reader = stream.getReader();
+      });
+    }
+
+    function pump() {
+      if (!st.reader) return open().then(pump);
+      return st.reader.read().then(function (r) {
+        if (r.done) { st.eof = true; return false; }
+        st.tail += st.decoder.decode(r.value, { stream: true });
+        return true;
+      });
+    }
+
+    // Read up to `n` complete lines; fewer means end of stream.
+    function readLines(n) {
+      var out = [];
+      function step() {
+        var nl;
+        while (out.length < n && (nl = st.tail.indexOf('\n')) >= 0) {
+          out.push(st.tail.slice(0, nl));
+          st.tail = st.tail.slice(nl + 1);
+        }
+        if (out.length >= n) return Promise.resolve(out);
+        if (st.eof) {
+          if (st.tail.length) { out.push(st.tail); st.tail = ''; }
+          return Promise.resolve(out);
+        }
+        return pump().then(step);
+      }
+      return step();
+    }
+
+    // Release the underlying network stream when the reader is discarded.
+    function cancel() {
+      if (st.reader) { try { st.reader.cancel(); } catch (e) { /* already closed */ } }
+    }
+
+    return { readLines: readLines, cancel: cancel, state: st };
+  }
+
+  window.AutoPipeGz = {
+    available: typeof DecompressionStream !== 'undefined',
+    lineReader: lineReader
+  };
+})();
+
+
   var rootEl = null;
   var allLines = [];
   var wordWrap = true;
@@ -129,12 +199,61 @@
   }
 
   var _totalLines = 0;
+  var _savedFileUrl = '';
   var _currentFilename = '';
   var PAGE_SIZE = 500;
 
+  function _isGz(name) { return /\.gz$/i.test(name); }
+
+  var _gzCur = null;
+
+  // A .text.gz is a single gzip stream: read it forward in the browser so no
+  // server tool is needed and only the leading bytes download. Sequential
+  // paging only (no random seek); plain files keep using /data/.
   function _fetchPage(filename, page) {
+    if (_isGz(filename) && window.AutoPipeGz && window.AutoPipeGz.available) {
+      return _fetchPageGz(filename, page).catch(function() {
+        return _fetchPageServer(filename, page);
+      });
+    }
+    return _fetchPageServer(filename, page);
+  }
+
+  function _fetchPageServer(filename, page) {
     return fetch('/data/' + encodeURIComponent(filename) + '?page=' + page + '&page_size=' + PAGE_SIZE)
       .then(function(resp) { return resp.json(); });
+  }
+
+  function _gzFileUrl(filename) {
+    return (typeof _savedFileUrl !== 'undefined' && _savedFileUrl)
+      ? _savedFileUrl : ('/file/' + encodeURIComponent(filename));
+  }
+
+  // Pages by line; 1 line(s) per record. Sequential only: reopen from the
+  // top unless paging forward from the current cursor.
+  function _fetchPageGz(filename, page) {
+    var LINES = PAGE_SIZE * 1;
+    var reuse = _gzCur && _gzCur.name === filename && _gzCur.page === page - 1;
+    if (!reuse) {
+      if (_gzCur && _gzCur.rd) _gzCur.rd.cancel();
+      _gzCur = { name: filename, page: -1, rd: window.AutoPipeGz.lineReader(_gzFileUrl(filename)) };
+      var skip = page * LINES;
+      var doSkip = function() {
+        if (skip <= 0) return Promise.resolve();
+        return _gzCur.rd.readLines(Math.min(skip, LINES)).then(function(ls) {
+          if (!ls.length) return; skip -= ls.length; return doSkip();
+        });
+      };
+      return doSkip().then(function() { return _gzTake(page, LINES); });
+    }
+    return _gzTake(page, LINES);
+  }
+
+  function _gzTake(page, LINES) {
+    return _gzCur.rd.readLines(LINES).then(function(lines) {
+      _gzCur.page = page;
+      return { rows: lines, total: page * PAGE_SIZE + lines.length, page: page, page_size: PAGE_SIZE };
+    });
   }
 
   var currentPage = 0;
@@ -166,6 +285,7 @@
   window.AutoPipePlugin = {
     render: function(container, fileUrl, filename) {
       rootEl = container;
+      _savedFileUrl = fileUrl; _gzCur = null;
       rootEl.innerHTML = '<div class="ap-loading">Loading...</div>';
       allLines = []; wordWrap = true; searchText = '';
       currentPage = 0;
