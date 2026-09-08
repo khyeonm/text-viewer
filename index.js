@@ -175,6 +175,10 @@
     }
 
     html += '</div>';
+    var __sf = rootEl.querySelector('#textSearch');
+    var __sfFocused = !!__sf && document.activeElement === __sf;
+    var __sfS = __sfFocused ? __sf.selectionStart : null;
+    var __sfE = __sfFocused ? __sf.selectionEnd : null;
     rootEl.innerHTML = html;
 
     // Update match count
@@ -184,6 +188,7 @@
     // Events
     var si = rootEl.querySelector('#textSearch');
     if (si) si.addEventListener('input', function() { searchText = this.value; render(); });
+    if (si && __sfFocused) { si.focus(); try { si.setSelectionRange(__sfS, __sfE); } catch (e) {} }
     var wb = rootEl.querySelector('#textWrapBtn');
     if (wb) wb.addEventListener('click', function() { wordWrap = !wordWrap; render(); });
     var pbs = rootEl.querySelectorAll('.text-pagination button');
